@@ -1,0 +1,9 @@
+# 讲座汇总助手依赖
+streamlit>=1.30
+pandas>=2.0
+openpyxl>=3.1
+Pillow>=10
+requests>=2.31
+python-dotenv>=1.0
+libsql>=0.1.11
+lxml>=4.9

@@ -1,0 +1,35 @@
+# ===== 视觉 token（去卡片 / 去生成感）=====
+# 圆角、边框、主色、图表色全部走这里，禁止在 app.py 里注入 style 块
+
+[theme]
+# 圆角压到接近直角，去掉圆润/卡片感
+baseRadius = "2px"
+buttonRadius = "2px"
+
+# 边框色贴近背景，弱化可见框线
+borderColor = "#EDEDEF"
+
+# 关闭 widget / sidebar 边框，减少"盒子"感
+showWidgetBorder = false
+showSidebarBorder = false
+
+# 主色换成克制的深灰蓝（原雾霾蓝 #8A9AAB 偏冷，这里用中性灰蓝）
+primaryColor = "#4A5568"
+
+# 图表色：克制非彩虹序列（三分类用 蓝灰/驼/鼠尾绿，延续原分类语义）
+chartCategoricalColors = [
+    "#8A9AAB",   # 讲座 · 雾霾蓝
+    "#B4A597",   # 人文活动 · 莫兰迪驼
+    "#A3B5A6",   # 学习场所 · 莫兰迪绿
+]
+
+[theme.light]
+backgroundColor = "#FCFCFD"
+secondaryBackgroundColor = "#F5F5F7"
+textColor = "#2D3748"
+
+[theme.dark]
+backgroundColor = "#1A1D23"
+secondaryBackgroundColor = "#252932"
+textColor = "#E5E7EB"
+borderColor = "#2E333D"

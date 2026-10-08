@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 敏感配置与本地数据
+.env
+lectures.db
+lectures.db-journal
+uploads/
+
+# Streamlit 默认产物
+.streamlit/secrets.toml
+
+# 临时测试脚本
+_*.py
+
+# 运行产物
+_streamlit.*
+_dump*.json
+_wx_imgs/
+lectures.xlsx
