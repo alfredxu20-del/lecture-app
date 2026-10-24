@@ -343,8 +343,10 @@ def init_db() -> None:
         conn.close()
 
 
+_CACHE_VER = 2  # 缓存版本号：Secrets 修复后从 1 升到 2，强制失效旧空缓存
+
 @st.cache_data(show_spinner=False)
-def load_all_lectures() -> pd.DataFrame:
+def load_all_lectures(_cache_ver: int = _CACHE_VER) -> pd.DataFrame:
     """加载讲座到 DataFrame（缓存，刷新或新插入后失效）。"""
     conn = get_conn()
     try:
