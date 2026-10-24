@@ -853,6 +853,24 @@ with st.sidebar:
 st.divider()
 st.subheader("信息库查询")
 
+# ----- 临时诊断（查完即删）-----
+with st.expander("🔧 诊断信息", expanded=False):
+    st.json({
+        "USE_TURSO": USE_TURSO,
+        "TURSO_URL(前30字符)": TURSO_URL[:30] if TURSO_URL else "(空)",
+        "TURSO_TOKEN(前10字符)": TURSO_TOKEN[:10] + "..." if TURSO_TOKEN else "(空)",
+        "TURSO_TOKEN长度": len(TURSO_TOKEN) if TURSO_TOKEN else 0,
+        "GUEST_PASSCODE": GUEST_PASSCODE or "(空)",
+    })
+    try:
+        _test_conn = get_conn()
+        _test_n = _test_conn.execute("SELECT COUNT(*) FROM lectures").fetchone()[0]
+        st.success(f"数据库连通 ✓ — lectures 表共 {_test_n} 条")
+        _test_conn.close()
+    except Exception as e:
+        st.error(f"数据库连接失败: {e}")
+# ----- 诊断结束 -----
+
 df = load_all_lectures()
 if df.empty:
     st.caption("信息库尚为空 · 点击右上角「导入新信息」开始录入")
