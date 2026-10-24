@@ -33,22 +33,31 @@ from lxml import html as LH
 # ============== 配置区（从 .env 读取，不提交） ==============
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-# 优先级：st.secrets（Streamlit Cloud）> 环境变量（本地 .env）> 报错
-_secrets = getattr(st, "secrets", {})
-API_KEY    = _secrets.get("DEEPSEEK_API_KEY")    or os.getenv("DEEPSEEK_API_KEY", "")
-API_BASE   = _secrets.get("DEEPSEEK_API_BASE")   or os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
-MODEL_NAME = _secrets.get("DEEPSEEK_MODEL")      or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+# 优先级：st.secrets（Streamlit Cloud）> 环境变量（本地 .env）
+def _safe_secret(key, default=""):
+    """先试 st.secrets，失败回退 os.getenv。"""
+    _secrets_path = os.path.join(os.path.dirname(__file__), ".streamlit", "secrets.toml")
+    if os.path.exists(_secrets_path):
+        try:
+            return st.secrets[key]
+        except Exception:
+            pass
+    return os.getenv(key, default)
+
+API_KEY    = _safe_secret("DEEPSEEK_API_KEY")
+API_BASE   = _safe_secret("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
+MODEL_NAME = _safe_secret("DEEPSEEK_MODEL", "deepseek-chat")
 
 # 数据库：有 Turso 环境变量走云端，否则本地 SQLite
-TURSO_URL    = (_secrets.get("TURSO_DB_URL")    or os.getenv("TURSO_DB_URL", "")).strip()
-TURSO_TOKEN  = (_secrets.get("TURSO_AUTH_TOKEN") or os.getenv("TURSO_AUTH_TOKEN", "")).strip()
+TURSO_URL    = _safe_secret("TURSO_DB_URL").strip()
+TURSO_TOKEN  = _safe_secret("TURSO_AUTH_TOKEN").strip()
 USE_TURSO    = bool(TURSO_URL and TURSO_TOKEN)
 LOCAL_DB     = os.path.join(os.path.dirname(__file__), "lectures.db")
 EXCEL_PATH   = os.path.join(os.path.dirname(__file__), "lectures.xlsx")
 UPLOAD_DIR   = os.path.join(os.path.dirname(__file__), "uploads")
 
 # 访客录入口令
-GUEST_PASSCODE = (_secrets.get("GUEST_PASSCODE") or os.getenv("GUEST_PASSCODE", "")).strip()
+GUEST_PASSCODE = _safe_secret("GUEST_PASSCODE").strip()
 
 # ============== 页面初始化 ==============
 st.set_page_config(
@@ -112,7 +121,7 @@ html, body, [data-testid="stApp"] {{
   background-repeat: no-repeat, no-repeat, no-repeat;
   background-position: center 120%, right -120px top 40px, left -100px bottom 60px;
   background-size: 720px auto, 360px auto, 320px auto;
-  opacity: 0.06;
+  opacity: 0.03;
 }}
 
 /* 让主容器浮在水印之上 */
@@ -132,9 +141,112 @@ html, body, [data-testid="stApp"] {{
   background-image: {_corner_logo_css};
   background-repeat: no-repeat;
   background-size: contain;
-  opacity: 0.18;
+  opacity: 0.10;
   pointer-events: none;
   z-index: 2;
+}}
+
+/* 搜索框：纯白背景 + 1px 浅灰边框，直角，加宽加高，去阴影 */
+[data-testid="stTextInput"] input {{
+  background: #FFFFFF !important;
+  border: 1px solid #D9DCE1 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding-top: 0.6rem !important;
+  padding-bottom: 0.6rem !important;
+  font-size: 1rem !important;
+}}
+[data-testid="stTextInput"] input:focus {{
+  border-color: #4A5568 !important;
+  box-shadow: none !important;
+}}
+
+/* 极简列表视图：1px 浅灰水平分割线，行内左右布局 */
+.list-view {{
+  margin: 0;
+}}
+/* 固定高度滚动容器：列表项过多时内部下拉，不撑长页面 */
+.list-scroll {{
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}}
+.list-scroll::-webkit-scrollbar {{
+  width: 6px;
+}}
+.list-scroll::-webkit-scrollbar-thumb {{
+  background: #D9DCE1;
+  border-radius: 3px;
+}}
+.list-scroll::-webkit-scrollbar-thumb:hover {{
+  background: #B5BAC1;
+}}
+.list-item {{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 2px;
+  border-bottom: 1px solid #EDEDEF;
+  flex-wrap: wrap;
+}}
+.list-item:last-child {{
+  border-bottom: none;
+}}
+.list-main {{
+  flex: 1 1 60%;
+  min-width: 0;
+}}
+.list-title {{
+  font-size: 1rem;
+  font-weight: 600;
+  color: #2D3748;
+  line-height: 1.45;
+  margin: 0 0 4px 0;
+  word-break: break-word;
+}}
+.list-meta {{
+  font-size: 0.85rem;
+  color: #8A8F98;
+  line-height: 1.4;
+  margin: 0;
+  word-break: break-word;
+}}
+.list-src {{
+  color: #8A8F98;
+  text-decoration: none;
+  border-bottom: 1px solid #C9CDD3;
+  padding-bottom: 1px;
+}}
+.list-src:hover {{
+  color: #2D3748;
+  border-bottom-color: #2D3748;
+}}
+.list-side {{
+  flex: 0 1 auto;
+  max-width: 40%;
+  text-align: right;
+  font-size: 0.85rem;
+  color: #8A8F98;
+  line-height: 1.4;
+  word-break: break-word;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}}
+/* 窄屏：右侧信息换行到标题下方，左对齐 */
+@media (max-width: 640px) {{
+  .list-side {{
+    flex-basis: 100%;
+    max-width: 100%;
+    text-align: left;
+    color: #8A8F98;
+  }}
+}}
+.list-empty {{
+  text-align: center;
+  color: #B5BAC1;
+  padding: 28px 0;
+  font-size: 0.9rem;
 }}
 </style>
 """,
@@ -142,8 +254,19 @@ html, body, [data-testid="stApp"] {{
 )
 
 
-st.title("讲座 · 人文活动 · 学习场所 汇总")
-st.caption("复旦大学哲学学院 ｜ 上传截图或微信链接 · 自动识别分类并提取 · 查询 · 导出")
+st.session_state.setdefault("auth_ok", False)
+
+_head_l, _head_r = st.columns([4, 1])
+with _head_l:
+    st.markdown("## 讲座 · 人文活动 · 学习场所 汇总")
+    st.caption("复旦大学哲学学院 ｜ 自动识别分类 · 汇总 · 检索")
+with _head_r:
+    st.write("")
+    if st.button("导入新信息", type="primary", use_container_width=True, key="btn_import"):
+        if st.session_state["auth_ok"]:
+            st.session_state["_req_import"] = True
+        else:
+            st.session_state["_req_pass"] = True
 
 # ============== 数据库工具
 # ============== 数据库工具 ==============
@@ -209,6 +332,7 @@ def init_db() -> None:
             ("contact",      "TEXT"),
             ("source_url",   "TEXT"),
             ("source_type",  "TEXT"),
+            ("source_image", "TEXT"),
         ]:
             if col not in cols:
                 conn.execute(f"ALTER TABLE lectures ADD COLUMN {col} {ddl}")
@@ -219,7 +343,7 @@ def init_db() -> None:
 
 @st.cache_data(show_spinner=False)
 def load_all_lectures() -> pd.DataFrame:
-    """加载全部讲座到 DataFrame（缓存，刷新或新插入后失效）。"""
+    """加载讲座到 DataFrame（缓存，刷新或新插入后失效）。"""
     conn = get_conn()
     try:
         df = pd.read_sql_query(
@@ -232,12 +356,78 @@ def load_all_lectures() -> pd.DataFrame:
         df["category"] = "lecture"
     # 剥掉时区：避免表格里出现 "+08:00"，且不能误把上海时间转成 UTC
     # 正确做法：tz_convert("Asia/Shanghai") 保持字面时间，再 tz_localize(None) 丢时区标签
+    # 注意：库里历史时间字符串格式曾混用 "YYYY-MM-DD HH:MM:SS" 与 "YYYY-MM-DDTHH:MM:SS"，
+    # 向量化 to_datetime 对混合格式可能解析失败产生 NaT，故用 format="mixed" 逐值兜底。
     for _col in ("time_start", "time_end"):
         if _col in df.columns:
-            df[_col] = pd.to_datetime(df[_col], errors="coerce")
+            df[_col] = pd.to_datetime(df[_col], errors="coerce", format="mixed")
             if df[_col].dt.tz is not None:
                 df[_col] = df[_col].dt.tz_convert("Asia/Shanghai").dt.tz_localize(None)
     return df
+
+
+def _normalize_key(s) -> str:
+    """规范化字符串用于去重比对：去空白、全角转半角、大小写统一、去常见标点。"""
+    if s is None:
+        return ""
+    s = str(s)
+    # 全角转半角（含全角标点）
+    out = []
+    for ch in s:
+        code = ord(ch)
+        if code == 0x3000:
+            out.append(" ")
+        elif 0xFF01 <= code <= 0xFF5E:
+            out.append(chr(code - 0xFEE0))
+        else:
+            out.append(ch)
+    s = "".join(out)
+    # 去所有空白与标点符号（保留字母数字与中文）
+    s = re.sub(r"[\s\W_]+", "", s, flags=re.UNICODE)
+    return s.lower()
+
+
+def is_duplicate(record: dict) -> bool:
+    """模糊去重：规范化 title + 同一 time_start 视为重复（在 DB UNIQUE 约束之外兜底）。"""
+    title = record.get("title")
+    ts = record.get("time_start")
+    if not title or not ts:
+        return False
+    key = _normalize_key(title)
+    if not key:
+        return False
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "SELECT title FROM lectures WHERE time_start = ?", (str(ts),)
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    for (t,) in rows:
+        if _normalize_key(t) == key:
+            return True
+    return False
+
+
+def cleanup_expired() -> int:
+    """物理删除已结束的讲座/人文活动（time_end 或 time_start 早于当前时间）。
+    学习场所（study_venue）为长期开放信息，不清理。返回删除条数。"""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            """
+            DELETE FROM lectures
+            WHERE category IN ('lecture', 'humanities_activity')
+              AND COALESCE(NULLIF(time_end, ''), NULLIF(time_start, ''), '9999-12-31 00:00:00') < ?
+            """,
+            (now,),
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
 
 
 def insert_lecture(record: dict) -> tuple[bool, str]:
@@ -247,14 +437,14 @@ def insert_lecture(record: dict) -> tuple[bool, str]:
         category, title, speaker, affiliation,
         time_text, time_start, time_end,
         location, online_url, host, registration, deadline,
-        source_account, source_url, source_type, summary,
+        source_account, source_url, source_type, source_image, summary,
         theme, participants,
         venue, hours, open_period, contact
     ) VALUES (
         :category, :title, :speaker, :affiliation,
         :time_text, :time_start, :time_end,
         :location, :online_url, :host, :registration, :deadline,
-        :source_account, :source_url, :source_type, :summary,
+        :source_account, :source_url, :source_type, :source_image, :summary,
         :theme, :participants,
         :venue, :hours, :open_period, :contact
     )
@@ -265,6 +455,9 @@ def insert_lecture(record: dict) -> tuple[bool, str]:
     # 规范化 category：未知 → lecture
     if record.get("category") not in CATEGORY_LIST:
         record["category"] = "lecture"
+    # 模糊去重（在 DB UNIQUE 约束之外兜底：标题标点/空格/大小写差异）
+    if is_duplicate(record):
+        return False, "检测到疑似重复信息（标题与时间相同），已自动跳过。"
     conn = get_conn()
     try:
         # 顺序必须与 INSERT 列名一致；libsql 不支持 :name 命名参数，所以这里直接按列顺序传 list
@@ -272,7 +465,7 @@ def insert_lecture(record: dict) -> tuple[bool, str]:
             "category", "title", "speaker", "affiliation",
             "time_text", "time_start", "time_end",
             "location", "online_url", "host", "registration", "deadline",
-            "source_account", "source_url", "source_type", "summary",
+            "source_account", "source_url", "source_type", "source_image", "summary",
             "theme", "participants",
             "venue", "hours", "open_period", "contact",
         ]
@@ -281,7 +474,10 @@ def insert_lecture(record: dict) -> tuple[bool, str]:
         conn.commit()
         if cur.rowcount == 0:
             return False, "检测到疑似重复讲座，已自动跳过。"
-        return True, "已成功写入数据库。"
+        # 写入成功后自动清理已过期信息（物理删除）
+        removed = cleanup_expired()
+        tail = f"（本次已自动清理 {removed} 条已结束的信息）" if removed else ""
+        return True, "已成功写入数据库。" + tail
     finally:
         conn.close()
 
@@ -414,7 +610,7 @@ def _normalize_record(record: dict) -> dict:
                     ts = ts.tz_localize("Asia/Shanghai").tz_localize(None)
                 except Exception:
                     ts = ts.tz_localize(None)
-            record[_col] = ts.to_pydatetime()
+            record[_col] = ts.strftime("%Y-%m-%d %H:%M:%S")
         except Exception:
             record[_col] = None
     return record
@@ -432,15 +628,22 @@ def extract_lecture_from_image(img: Image.Image) -> dict:
 
 
 def save_uploaded_image(uploaded) -> str:
-    """保存用户上传的图片到 uploads/ 目录，返回相对路径作为图片来源。"""
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    ext = os.path.splitext(uploaded.name or "")[1].lower()
-    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
-        ext = ".png"
-    fname = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
-    with open(os.path.join(UPLOAD_DIR, fname), "wb") as f:
-        f.write(uploaded.getbuffer())
-    return f"uploads/{fname}"
+    """保存用户上传的图片，返回 base64 数据串（存进 source_image，线上可内嵌展示）。
+    同时落一份到 uploads/ 目录作为本地兜底。"""
+    import base64
+    data = uploaded.getbuffer()
+    b64 = base64.b64encode(data).decode("ascii")
+    try:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        ext = os.path.splitext(uploaded.name or "")[1].lower()
+        if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+            ext = ".png"
+        fname = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
+        with open(os.path.join(UPLOAD_DIR, fname), "wb") as f:
+            f.write(data)
+    except Exception:
+        pass
+    return b64
 
 
 # ============== 微信公众号文章抓取 ==============
@@ -566,7 +769,7 @@ FIELDS = [
     "time_text", "time_start", "time_end",
     "location", "online_url",
     "host", "registration", "deadline",
-    "source_account", "source_url", "source_type", "summary",
+    "source_account", "source_url", "source_type", "source_image", "summary",
     "theme", "participants",
     "venue", "hours", "open_period", "contact",
 ]
@@ -592,6 +795,31 @@ FIELDS_BY_CATEGORY = {
         "host", "location", "contact",
         "source_account", "summary",
     ],
+}
+
+# 字段中文标签（极简列表视图 / 详情展示用）
+FIELD_LABELS = {
+    "title":        "标题",
+    "speaker":      "主讲人",
+    "affiliation":  "单位",
+    "time_text":    "时间",
+    "time_start":   "开始时间",
+    "time_end":     "结束时间",
+    "location":     "地点",
+    "online_url":   "线上链接",
+    "host":         "主办方",
+    "registration": "报名方式",
+    "deadline":     "截止时间",
+    "source_account": "来源账号",
+    "source_url":   "消息来源",
+    "source_type":  "来源类型",
+    "summary":      "摘要",
+    "theme":        "主题",
+    "participants": "参与对象",
+    "venue":        "场所",
+    "hours":        "开放时间",
+    "open_period":  "有效时段",
+    "contact":      "联系方式",
 }
 
 # ============== UI: 侧栏信息（只读） ==============
@@ -621,11 +849,11 @@ with st.sidebar:
 
 # ============== UI: 查询 ==============
 st.divider()
-st.subheader("③ 信息库查询")
+st.subheader("信息库查询")
 
 df = load_all_lectures()
 if df.empty:
-    st.caption("信息库尚为空 · 在上方上传一张截图或粘贴一条微信链接")
+    st.caption("信息库尚为空 · 点击右上角「导入新信息」开始录入")
 else:
     # category 默认为空（防御性补列，应对缓存中的旧 DataFrame）
     if "category" not in df.columns:
@@ -633,121 +861,122 @@ else:
     df["category"] = df["category"].fillna("lecture")
     df["_cat_label"] = df["category"].map(lambda k: CATEGORY_LABELS.get(k, "讲座信息"))
 
-    # ---------- 分类分布统计：主指标 + 一行灰字 ----------
+    # ---------- 分类分布统计（供搜索行右侧小字使用） ----------
     counts = df["category"].value_counts().to_dict()
-    st.metric("总记录", len(df))
-    st.caption(
-        " ｜ ".join(
+
+    # ---------- 分类筛选（极简下划线 Tab，多选） ----------
+    # 用 st.pills（selection_mode="multi"）承载多选，CSS 覆盖成下划线样式：
+    # 选中黑字 + 底部下划线，未选灰字。状态仍走 cat_filter。
+    st.markdown(
+        """
+    <style>
+    /* 下划线 Tab：去掉 pills 的胶囊底色/边框/圆角，仅保留底部下划线作为选中态 */
+    [data-testid="stPills"] [data-testid="stBaseButton"] {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+      padding: 6px 14px !important;
+    }
+    [data-testid="stPills"] [data-testid="stBaseButton"] p {
+      color: #8A8F98 !important;
+      font-weight: 400 !important;
+    }
+    [data-testid="stPills"] [data-testid="stBaseButton"]:hover p {
+      color: #2D3748 !important;
+    }
+    /* 选中项：黑字 + 底部下划线 */
+    [data-testid="stPills"] [data-testid="stBaseButton"][aria-selected="true"] {
+      border-bottom: 2px solid #2D3748 !important;
+    }
+    [data-testid="stPills"] [data-testid="stBaseButton"][aria-selected="true"] p {
+      color: #2D3748 !important;
+      font-weight: 600 !important;
+    }
+    /* 选中项默认那个对勾/填充隐藏 */
+    [data-testid="stPills"] [data-testid="stBaseButton"] [data-testid="stPill"] {
+      background: transparent !important;
+    }
+    </style>
+    """,
+        unsafe_allow_html=True,
+    )
+    st.pills(
+        "分类",
+        options=CATEGORY_LIST,
+        default=list(CATEGORY_LIST),
+        selection_mode="multi",
+        format_func=lambda k: CATEGORY_LABELS.get(k, k),
+        key="cat_filter",
+        label_visibility="collapsed",
+    )
+
+    # ---------- 关键词搜索 + 右侧记录数小字 ----------
+    _kw_col, _cnt_col = st.columns([3, 1])
+    keyword = _kw_col.text_input(
+        "搜索", "", key="kw_all",
+        placeholder="搜索讲座或活动（支持主讲人、单位、地点）",
+        label_visibility="collapsed",
+    )
+    _kw_col.caption("例如：语言学、复旦、Volker")
+    _cnt_col.write("")
+    _cnt_col.caption(
+        f"共 {len(df)} 条 · "
+        + " · ".join(
             f"{CATEGORY_LABELS.get(cat, cat)} {counts.get(cat, 0)}"
             for cat in CATEGORY_LIST
         )
     )
 
-    # ---------- 查询模式 ----------
-    mode = st.radio(
-        "查询模式",
-        ["条件筛选", "显示全部"],
-        horizontal=True,
-        key="query_mode",
-    )
+    with st.expander("高级筛选（可选）", expanded=False):
+        f1, f2, f3 = st.columns(3)
+        kw_title   = f1.text_input("按标题",   "", key="kw_title")
+        kw_speaker = f2.text_input("按主讲人", "", key="kw_speaker")
+        kw_host    = f3.text_input("按主办方", "", key="kw_host")
 
-    if mode == "显示全部":
-        st.caption(f"信息库共 {len(df)} 条记录（按分类 + 开始时间）")
-        view = df.copy()
-    else:
-        # ---------- 分类多选 ----------
-        st.multiselect(
-            "分类筛选（可多选，默认全部）",
-            options=CATEGORY_LIST,
-            default=CATEGORY_LIST,
-            format_func=lambda k: CATEGORY_LABELS.get(k, k),
-            key="cat_filter",
-        )
-        # ---------- 关键词搜索 ----------
-        keyword = st.text_input(
-            "关键词搜索（标题 / 主讲人 / 单位 / 地点 / 主办方 / 摘要 等全部字段）",
-            "",
-            key="kw_all",
-            placeholder="输入任意关键词，例如：语言学、复旦、Volker",
+        valid_ts = pd.to_datetime(df["time_start"], errors="coerce").dropna()
+        if not valid_ts.empty:
+            default_range = (valid_ts.min().date(), valid_ts.max().date())
+        else:
+            default_range = (datetime.now().date(), datetime.now().date())
+        use_date = st.checkbox("启用时间范围筛选", value=False, key="use_date")
+        date_min, date_max = st.date_input(
+            "时间范围（开始 ~ 结束）",
+            value=default_range,
+            key="date_range",
+            disabled=not use_date,
         )
 
-        with st.expander("高级筛选（可选）", expanded=False):
-            f1, f2, f3 = st.columns(3)
-            kw_title   = f1.text_input("按标题",   "", key="kw_title")
-            kw_speaker = f2.text_input("按主讲人", "", key="kw_speaker")
-            kw_host    = f3.text_input("按主办方", "", key="kw_host")
+    view = df.copy()
 
-            valid_ts = pd.to_datetime(df["time_start"], errors="coerce").dropna()
-            if not valid_ts.empty:
-                default_range = (valid_ts.min().date(), valid_ts.max().date())
-            else:
-                default_range = (datetime.now().date(), datetime.now().date())
-            use_date = st.checkbox("启用时间范围筛选", value=False, key="use_date")
-            date_min, date_max = st.date_input(
-                "时间范围（开始 ~ 结束）",
-                value=default_range,
-                key="date_range",
-                disabled=not use_date,
-            )
+    # 分类筛选
+    sel_cats = st.session_state.get("cat_filter", CATEGORY_LIST) or CATEGORY_LIST
+    view = view[view["category"].isin(sel_cats)]
 
-        view = df.copy()
+    # 全局关键词
+    if keyword:
+        search_cols = [c for c in view.columns if c not in ("id", "created_at", "_cat_label")]
+        mask = pd.Series(False, index=view.index)
+        for c in search_cols:
+            mask = mask | view[c].fillna("").astype(str).str.contains(keyword, case=False, na=False)
+        view = view[mask]
 
-        # 分类筛选
-        sel_cats = st.session_state.get("cat_filter", CATEGORY_LIST) or CATEGORY_LIST
-        view = view[view["category"].isin(sel_cats)]
+    # 高级筛选
+    if kw_title:
+        view = view[view["title"].fillna("").str.contains(kw_title, case=False, na=False)]
+    if kw_speaker:
+        view = view[view["speaker"].fillna("").str.contains(kw_speaker, case=False, na=False)]
+    if kw_host:
+        view = view[view["host"].fillna("").str.contains(kw_host, case=False, na=False)]
 
-        # 全局关键词
-        if keyword:
-            search_cols = [c for c in view.columns if c not in ("id", "created_at", "_cat_label")]
-            mask = pd.Series(False, index=view.index)
-            for c in search_cols:
-                mask = mask | view[c].fillna("").astype(str).str.contains(keyword, case=False, na=False)
-            view = view[mask]
+    if use_date and date_min and date_max:
+        ts = pd.to_datetime(view["time_start"], errors="coerce")
+        view = view[
+            (ts >= pd.to_datetime(date_min))
+            & (ts <= pd.to_datetime(date_max) + pd.Timedelta(days=1))
+        ]
 
-        # 高级筛选
-        if kw_title:
-            view = view[view["title"].fillna("").str.contains(kw_title, case=False, na=False)]
-        if kw_speaker:
-            view = view[view["speaker"].fillna("").str.contains(kw_speaker, case=False, na=False)]
-        if kw_host:
-            view = view[view["host"].fillna("").str.contains(kw_host, case=False, na=False)]
-
-        if use_date and date_min and date_max:
-            ts = pd.to_datetime(view["time_start"], errors="coerce")
-            view = view[
-                (ts >= pd.to_datetime(date_min))
-                & (ts <= pd.to_datetime(date_max) + pd.Timedelta(days=1))
-            ]
-
-    st.caption(f"当前显示 {len(view)} / {len(df)} 条记录")
-
-    # ---------- 按分类分组展示 ----------
-    for cat_key in CATEGORY_LIST:
-        sub = view[view["category"] == cat_key].sort_values("time_start", na_position="last")
-        # 每类用自己的专属字段（讲座：主讲人/单位；活动：主题/参与对象；场所：场所/开放时间）
-        cat_cols = [c for c in FIELDS_BY_CATEGORY[cat_key] if c in sub.columns]
-        if "source_url" in sub.columns and "source_url" not in cat_cols:
-            cat_cols.append("source_url")
-        with st.expander(
-            f"{CATEGORY_LABELS[cat_key]} · {len(sub)} 条",
-            expanded=False,
-        ):
-            if sub.empty:
-                st.caption("（该分类下暂无记录）")
-            else:
-                st.dataframe(
-                    sub[cat_cols],
-                    width='stretch',
-                    hide_index=True,
-                )
-
-    # 扁平表（备选查看）—— 纯按时间顺序（早→晚）
-    with st.expander("扁平表（所有记录按时间顺序）", expanded=False):
-        flat_view = view.sort_values(["time_start", "category"], na_position="last")
-        flat_cols = ["_cat_label"] + [c for c in FIELDS if c in flat_view.columns and c != "category"]
-        st.dataframe(flat_view[flat_cols], width='stretch', hide_index=True)
-
-    # ---------- 导出 Excel（按分类多 sheet） ----------
+    # ---------- 按分类分组展示（极简列表视图） ----------
     _sheet_color = {
         "lecture":            "8A9AAB",
         "humanities_activity":"B4A597",
@@ -758,7 +987,168 @@ else:
         "humanities_activity":"Activity",
         "study_venue":        "Venue",
     }
-    if st.button("导出当前结果为 Excel（按分类分 sheet）"):
+    def _fmt_time(row):
+        """优先可读时间 text，否则用 time_start 的日期时间。"""
+        t = row.get("time_text")
+        if t is not None and not pd.isna(t) and str(t).strip() and str(t).strip() != "nan":
+            return str(t).strip()
+        ts = row.get("time_start")
+        if ts is not None and not pd.isna(ts) and str(ts) != "" and str(ts) != "NaT":
+            try:
+                return pd.to_datetime(ts).strftime("%m月%d日 %H:%M")
+            except Exception:
+                return str(ts)
+        return ""
+
+    def _cat_subline(row, cat_key):
+        """第二行灰色小字：按分类取关键字段拼接。"""
+        if cat_key == "lecture":
+            parts = [row.get("speaker"), row.get("affiliation")]
+        elif cat_key == "humanities_activity":
+            parts = [row.get("theme"), row.get("participants"), row.get("speaker")]
+        else:  # study_venue
+            parts = [row.get("venue"), row.get("hours")]
+        out = []
+        for p in parts:
+            if p is None or (isinstance(p, float) and pd.isna(p)):
+                continue
+            s = str(p).strip()
+            if s and s not in ("nan", "None", "NaT"):
+                out.append(s)
+        sub = " · ".join(out)
+        # 主讲人/单位过长时截断（避免 17 个人名 + 10 个单位撑满第二行）
+        if len(sub) > 48:
+            sub = sub[:48].rstrip() + "…"
+        return sub
+
+    def _render_list_item_html(row, cat_key):
+        title = str(row.get("title") or "").strip() or "（无标题）"
+        subline = _cat_subline(row, cat_key)
+        # 右侧：时间优先（完整），地点次之（过长可截断）
+        t = _fmt_time(row)
+        # 时间只取第一段（多场次排期用 ; ； , ， 分隔时只显示首场）
+        t_first = t
+        for _sep in ("；", ";", "，", ","):
+            if _sep in t_first:
+                t_first = t_first.split(_sep)[0].strip()
+                break
+        loc = row.get("location")
+        loc_s = ""
+        if loc is not None and not pd.isna(loc) and str(loc).strip() and str(loc).strip() != "nan":
+            loc_s = str(loc).strip()
+        # 拼接：地点 · 时间；整体超长时截地点、保时间完整
+        if t_first and loc_s:
+            side = f"{loc_s} · {t_first}"
+        elif t_first:
+            side = t_first
+        elif loc_s:
+            side = loc_s
+        else:
+            side = ""
+        if len(side) > 60:
+            # 尽量保留时间完整：截断地点部分
+            if t_first and t_first in side:
+                keep_tail = t_first
+                head_budget = 60 - len(keep_tail) - 3
+                if head_budget > 0:
+                    side = loc_s[:head_budget].rstrip() + "…" + " · " + keep_tail
+                else:
+                    side = side[:60].rstrip() + "…"
+            else:
+                side = side[:60].rstrip() + "…"
+        # 消息来源（统一作为跳转接口：链接→原文，图片→data URI 原图）
+        src = row.get("source_url")
+        src_type = str(row.get("source_type") or "").strip()
+        src_img = row.get("source_image")
+        src_txt = ""
+        if src_type == "image" and src_img is not None and not pd.isna(src_img) and str(src_img).strip():
+            # 图片来源：内嵌 base64，点开新标签看原图
+            src_txt = (
+                f'<a href="data:image/png;base64,{str(src_img).strip()}" '
+                f'target="_blank" class="list-src">查看原图 ↗</a>'
+            )
+        elif src is not None and not pd.isna(src) and str(src).strip() and str(src).strip() not in ("nan", "None"):
+            s = str(src).strip()
+            if s.startswith("http"):
+                src_txt = f'<a href="{s}" target="_blank" class="list-src">原文 ↗</a>'
+            else:
+                src_txt = f'<span class="list-src" style="color:#B5BAC1;">来源：{s}</span>'
+        meta_html = ""
+        if subline:
+            meta_html += f'<span>{subline}</span>'
+        if src_txt:
+            meta_html += (f'<span style="margin-left:10px;">{src_txt}</span>' if meta_html else src_txt)
+        # 注意：必须输出单行 HTML（无换行无缩进）——Markdown 会把 4+ 空格缩进的行当作代码块原样显示
+        return (
+            f'<div class="list-item"><div class="list-main">'
+            f'<div class="list-title">{title}</div>'
+            f'<div class="list-meta">{meta_html}</div>'
+            f'</div><div class="list-side">{side}</div></div>'
+        )
+
+    for cat_key in CATEGORY_LIST:
+        sub = view[view["category"] == cat_key].sort_values("time_start", na_position="last")
+        _n = len(sub)
+        # 默认展开第一个有内容的分类，其余折叠，避免页面过长
+        _default_open = (cat_key == CATEGORY_LIST[0])
+        with st.expander(
+            f"{CATEGORY_LABELS[cat_key]} · {_n} 条",
+            expanded=_default_open,
+        ):
+            # 导出按钮（分类内，右上角次要按钮）
+            if _n > 0:
+                _exp_l, _exp_r = st.columns([5, 1])
+                with _exp_r:
+                    _do_export = st.button(
+                        "导出 Excel", key=f"export_{cat_key}",
+                        use_container_width=True, type="secondary",
+                    )
+            else:
+                _do_export = False
+            if sub.empty:
+                st.markdown(
+                    '<div class="list-empty">暂无相关开放信息，请点击右上角导入。</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                # 收集所有行，包进固定高度滚动容器，避免撑长页面
+                _items_html = "".join(
+                    _render_list_item_html(row, cat_key)
+                    for _, row in sub.iterrows()
+                )
+                st.markdown(
+                    f'<div class="list-scroll">{_items_html}</div>',
+                    unsafe_allow_html=True,
+                )
+            # 该分类的导出
+            if _do_export:
+                with pd.ExcelWriter(EXCEL_PATH, engine="openpyxl") as writer:
+                    cols = [c for c in FIELDS if c in sub.columns]
+                    sheet_name = _sheet_short.get(cat_key, cat_key)[:31]
+                    sub[cols].to_excel(writer, index=False, sheet_name=sheet_name)
+                    try:
+                        writer.sheets[sheet_name].sheet_properties.tabColor = (
+                            _sheet_color.get(cat_key, "8A9AAB")
+                        )
+                    except Exception:
+                        pass
+                with open(EXCEL_PATH, "rb") as f:
+                    st.download_button(
+                        "下载 lectures.xlsx",
+                        data=f.read(),
+                        file_name=f"lectures_{_sheet_short.get(cat_key, cat_key)}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"dl_{cat_key}",
+                    )
+                st.rerun()
+
+    # 全局导出（所有分类合并，按分类多 sheet）—— 保留在底部一个次要按钮
+    _exp_all_l, _exp_all_r = st.columns([5, 1])
+    with _exp_all_r:
+        _do_export_all = st.button(
+            "导出全部", key="export_all", use_container_width=True, type="secondary",
+        )
+    if _do_export_all:
         with pd.ExcelWriter(EXCEL_PATH, engine="openpyxl") as writer:
             written = False
             for cat_key in CATEGORY_LIST:
@@ -767,12 +1157,9 @@ else:
                     continue
                 written = True
                 cols = [c for c in FIELDS if c in sub.columns]
-                sub_export = sub[cols]
                 sheet_name = _sheet_short.get(cat_key, cat_key)[:31]
-                sub_export.to_excel(writer, index=False, sheet_name=sheet_name)
-                # 涂 tab color（分类色）
+                sub[cols].to_excel(writer, index=False, sheet_name=sheet_name)
                 try:
-                    from openpyxl.styles import Color
                     writer.sheets[sheet_name].sheet_properties.tabColor = (
                         _sheet_color.get(cat_key, "8A9AAB")
                     )
@@ -786,221 +1173,234 @@ else:
                 data=f.read(),
                 file_name="lectures.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_all",
             )
+        st.rerun()
 
-# ============== UI: 访客录入口令守卫 ==============
-if "auth_ok" not in st.session_state:
-    st.session_state["auth_ok"] = False
-if not st.session_state["auth_ok"]:
-    st.subheader("录入口令")
-    st.caption("任何人都可以查看下方信息库；如需上传录入，请输入口令。")
+    # 扁平表（备选查看）—— 纯按时间顺序（早→晚）
+    with st.expander("扁平表（所有记录按时间顺序）", expanded=False):
+        flat_view = view.sort_values(["time_start", "category"], na_position="last")
+        flat_cols = ["_cat_label"] + [c for c in FIELDS if c in flat_view.columns and c != "category"]
+        _flat = flat_view[flat_cols].copy()
+        _flat = _flat.rename(columns={"_cat_label": "分类", **FIELD_LABELS})
+        st.dataframe(_flat, width='stretch', hide_index=True)
+
+@st.dialog("导入新信息", width="large")
+def render_import():
+    input_mode = st.radio(
+        "选择输入方式",
+        ["上传截图", "微信公众号链接"],
+        horizontal=True,
+        key="input_mode",
+    )
+
+    # ---------- 方式一：上传截图 ----------
+    if input_mode == "上传截图":
+        uploaded = st.file_uploader(
+            "拖拽 / 选择一张讲座海报或公众号文章截图",
+            type=["png", "jpg", "jpeg", "webp"],
+            accept_multiple_files=False,
+            key="upload_single",
+        )
+
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            if uploaded is not None:
+                img = Image.open(uploaded)
+                st.image(img, caption="已上传的截图", width='stretch')
+
+        with col2:
+            if uploaded is not None and st.button("提取信息", type="primary"):
+                with st.spinner("正在调用大模型提取，请稍候..."):
+                    try:
+                        record = extract_lecture_from_image(img)
+                        record["source_image"] = save_uploaded_image(uploaded)
+                        record["source_type"] = "image"
+                        st.session_state["pending_record"] = record
+                        label = CATEGORY_LABELS.get(record.get("category"), "讲座信息")
+                        st.success(f"识别为：{label}，请在下方确认后写入。")
+                    except Exception as e:
+                        st.error(f"提取失败: {e}")
+
+    # ---------- 方式二：微信公众号链接（批量） ----------
+    else:
+        st.caption("支持一次粘贴多条链接（每行一条），常见格式：https://mp.weixin.qq.com/s/xxxxx")
+        url_text = st.text_area(
+            "微信公众号文章链接（每行一条）",
+            height=160,
+            placeholder="https://mp.weixin.qq.com/s/xxxxxxxxxx\nhttps://mp.weixin.qq.com/s/yyyyyyyyyy",
+            key="wx_urls",
+        )
+        only_image = st.checkbox("仅保留成功提取到标题的记录", value=True, key="wx_filter")
+
+        if st.button("开始批量抓取并提取", type="primary"):
+            urls = [u.strip() for u in url_text.splitlines() if u.strip()]
+            urls = list(dict.fromkeys(urls))  # 去重保持顺序
+            if not urls:
+                st.warning("请先粘贴至少一条链接。")
+            else:
+                results, errors = [], []
+                bar = st.progress(0.0, text="开始抓取...")
+                for i, u in enumerate(urls, 1):
+                    bar.progress((i - 1) / len(urls), text=f"[{i}/{len(urls)}] 处理中：{u[:60]}...")
+                    try:
+                        rec, meta = extract_from_url(u)
+                        rec["_meta"] = meta
+                        results.append(rec)
+                    except Exception as e:
+                        errors.append({"url": u, "error": str(e)})
+                    time.sleep(1.5)  # 对微信友好，降低风控风险
+                bar.progress(1.0, text="完成")
+                st.session_state["wx_results"] = results
+                st.session_state["wx_errors"] = errors
+                st.session_state.pop("wx_done", None)
+
+        # 展示抓取结果
+        if st.session_state.get("wx_results") is not None:
+            results = st.session_state["wx_results"]
+            errors = st.session_state.get("wx_errors", [])
+            st.success(f"本次共提取 {len(results)} 条，失败 {len(errors)} 条。")
+            if errors:
+                with st.expander(f"失败详情（{len(errors)} 条）"):
+                    for e in errors:
+                        st.write(f"- `{e['url'][:70]}` → {e['error']}")
+            if results:
+                st.markdown("**预览（可核对后再批量入库）**")
+                preview_rows = []
+                for r in results:
+                    cat = r.get("category") if r.get("category") in CATEGORY_LIST else "lecture"
+                    cols = FIELDS_BY_CATEGORY[cat]
+                    preview_rows.append({
+                        "分类": CATEGORY_LABELS.get(cat, cat),
+                        **{k: r.get(k) for k in cols if k != "summary"}
+                    })
+                st.dataframe(pd.DataFrame(preview_rows), width='stretch', hide_index=True)
+
+                if st.button("全部写入数据库", key="wx_bulk_insert"):
+                    ok_n = dup_n = 0
+                    for r in results:
+                        meta = r.get("_meta") or {}
+                        r = {k: v for k, v in r.items() if k != "_meta"}
+                        if meta.get("url"):
+                            r["source_url"] = meta["url"]
+                        r["source_type"] = "wechat"
+                        if only_image and not (r.get("title") or "").strip():
+                            continue
+                        ok, _ = insert_lecture(r)
+                        ok_n += 1 if ok else 0
+                        dup_n += 0 if ok else 1
+                    st.cache_data.clear()
+                    st.success(f"新写入 {ok_n} 条，跳过重复/空记录 {dup_n} 条。")
+                    st.session_state.pop("wx_results", None)
+                    st.session_state.pop("wx_errors", None)
+                    st.rerun()
+
+    # 确认 & 写入
+    if "pending_record" in st.session_state:
+        st.subheader("确认信息并写入")
+        rec = st.session_state["pending_record"]
+        with st.form("confirm_form"):
+            # ---- 1. 分类选择（可手动调整）----
+            cur_cat = rec.get("category") if rec.get("category") in CATEGORY_LIST else "lecture"
+            cat_label_to_key = {v: k for k, v in CATEGORY_LABELS.items()}
+            rec["category"] = st.selectbox(
+                "分类（可手动调整）",
+                options=CATEGORY_LIST,
+                format_func=lambda k: CATEGORY_LABELS.get(k, k),
+                index=CATEGORY_LIST.index(cur_cat),
+            )
+            st.write("")
+
+            fields = FIELDS_BY_CATEGORY[rec["category"]]
+
+            # ---- 2. 动态字段展示 ----
+            # 先根据 category 生成不同行
+            if rec["category"] == "lecture":
+                c1, c2, c3 = st.columns(3)
+                rec["title"]       = c1.text_input("讲座标题",  rec.get("title") or "")
+                rec["speaker"]     = c2.text_input("主讲人",    rec.get("speaker") or "")
+                rec["affiliation"] = c3.text_input("主讲人单位", rec.get("affiliation") or "")
+            elif rec["category"] == "humanities_activity":
+                c1, c2, c3 = st.columns(3)
+                rec["title"]        = c1.text_input("活动名称",        rec.get("title") or "")
+                rec["theme"]        = c2.text_input("主题 / 征稿主题", rec.get("theme") or "")
+                rec["participants"] = c3.text_input("参与对象 / 参赛要求", rec.get("participants") or "")
+            else:  # study_venue
+                c1, c2, c3 = st.columns(3)
+                rec["title"]    = c1.text_input("信息标题", rec.get("title") or "")
+                rec["venue"]    = c2.text_input("场所名称", rec.get("venue") or "")
+                rec["hours"]    = c3.text_input("开放时间描述", rec.get("hours") or "")
+
+            # time_text / time_start / time_end —— 讲座和人文活动用
+            if rec["category"] in ("lecture", "humanities_activity"):
+                c4, c5, c6 = st.columns(3)
+                rec["time_text"]  = c4.text_input("原文时间描述",  rec.get("time_text") or "")
+                rec["time_start"] = c5.text_input("开始时间 ISO8601", rec.get("time_start") or "")
+                rec["time_end"]   = c6.text_input("结束时间 ISO8601", rec.get("time_end") or "")
+
+            # 场地 / 开放期 —— 场所
+            if rec["category"] == "study_venue":
+                c4, c5 = st.columns(2)
+                rec["open_period"] = c4.text_input("有效起止日期", rec.get("open_period") or "")
+                rec["contact"]     = c5.text_input("联系方式（电话 / 联系人）", rec.get("contact") or "")
+                # 场所也可有具体地点（推荐 location）
+                rec["location"] = st.text_input("具体位置（选填）", rec.get("location") or "")
+
+            # location / online_url —— 三类都可能有
+            if rec["category"] in ("lecture", "humanities_activity"):
+                c7, c8 = st.columns(2)
+                rec["location"]   = c7.text_input("线下地点", rec.get("location") or "")
+                rec["online_url"] = c8.text_input("线上链接", rec.get("online_url") or "")
+
+            # host / registration / deadline —— 讲座和活动
+            if rec["category"] in ("lecture", "humanities_activity"):
+                c9, c10, c11 = st.columns(3)
+                rec["host"]         = c9.text_input("主办方",       rec.get("host") or "")
+                rec["registration"] = c10.text_input("报名方式",     rec.get("registration") or "")
+                rec["deadline"]     = c11.text_input("报名 / 征稿截止", rec.get("deadline") or "")
+            else:
+                rec["host"] = st.text_input("主办 / 负责单位", rec.get("host") or "")
+
+            c12, c13 = st.columns(2)
+            rec["source_account"] = c12.text_input("公众号名称", rec.get("source_account") or "")
+            rec["source_url"]     = c13.text_input("消息来源链接", rec.get("source_url") or "")
+            rec["summary"]        = st.text_area("一句话摘要", rec.get("summary") or "")
+
+            cc1, cc2 = st.columns(2)
+            submitted = cc1.form_submit_button("写入数据库")
+            cancelled = cc2.form_submit_button("取消")
+
+            if submitted:
+                ok, msg = insert_lecture(rec)
+                if ok:
+                    cat_zh = CATEGORY_LABELS.get(rec["category"], "")
+                    st.success(f"已写入【{cat_zh}】《{rec['title']}》。")
+                    st.session_state.pop("pending_record", None)
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.warning(msg)
+            if cancelled:
+                st.session_state.pop("pending_record", None)
+                st.rerun()
+
+
+@st.dialog("录入口令")
+def render_passcode():
+    st.caption("信息库可自由浏览；录入新信息需要访客口令。")
     pwd = st.text_input("访客口令", type="password", key="guest_pwd")
-    if st.button("验证", key="auth_btn"):
+    if st.button("验证", type="primary", key="auth_btn"):
         if not GUEST_PASSCODE:
-            st.error("服务端未配置口令（GUEST_PASSCODE 未设置），请联系管理员。")
+            st.error("服务端未配置口令，请联系管理员。")
         elif pwd == GUEST_PASSCODE:
             st.session_state["auth_ok"] = True
-            st.success("验证通过。")
-            st.rerun()
+            st.session_state["_req_import"] = True
+            st.rerun(scope="app")
         else:
             st.error("口令错误。")
-    st.stop()
 
-# ============== UI: 输入方式 ==============
-st.subheader("① 录入讲座信息")
-input_mode = st.radio(
-    "选择输入方式",
-    ["上传截图", "微信公众号链接"],
-    horizontal=True,
-    key="input_mode",
-)
 
-# ---------- 方式一：上传截图 ----------
-if input_mode == "上传截图":
-    uploaded = st.file_uploader(
-        "拖拽 / 选择一张讲座海报或公众号文章截图",
-        type=["png", "jpg", "jpeg", "webp"],
-        accept_multiple_files=False,
-        key="upload_single",
-    )
-
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        if uploaded is not None:
-            img = Image.open(uploaded)
-            st.image(img, caption="已上传的截图", width='stretch')
-
-    with col2:
-        if uploaded is not None and st.button("提取信息", type="primary"):
-            with st.spinner("正在调用大模型提取，请稍候..."):
-                try:
-                    record = extract_lecture_from_image(img)
-                    record["source_url"] = save_uploaded_image(uploaded)
-                    record["source_type"] = "image"
-                    st.session_state["pending_record"] = record
-                    label = CATEGORY_LABELS.get(record.get("category"), "讲座信息")
-                    st.success(f"识别为：{label}，请在下方确认后写入。")
-                except Exception as e:
-                    st.error(f"提取失败: {e}")
-
-# ---------- 方式二：微信公众号链接（批量） ----------
-else:
-    st.caption("支持一次粘贴多条链接（每行一条），常见格式：https://mp.weixin.qq.com/s/xxxxx")
-    url_text = st.text_area(
-        "微信公众号文章链接（每行一条）",
-        height=160,
-        placeholder="https://mp.weixin.qq.com/s/xxxxxxxxxx\nhttps://mp.weixin.qq.com/s/yyyyyyyyyy",
-        key="wx_urls",
-    )
-    only_image = st.checkbox("仅保留成功提取到标题的记录", value=True, key="wx_filter")
-
-    if st.button("开始批量抓取并提取", type="primary"):
-        urls = [u.strip() for u in url_text.splitlines() if u.strip()]
-        urls = list(dict.fromkeys(urls))  # 去重保持顺序
-        if not urls:
-            st.warning("请先粘贴至少一条链接。")
-        else:
-            results, errors = [], []
-            bar = st.progress(0.0, text="开始抓取...")
-            for i, u in enumerate(urls, 1):
-                bar.progress((i - 1) / len(urls), text=f"[{i}/{len(urls)}] 处理中：{u[:60]}...")
-                try:
-                    rec, meta = extract_from_url(u)
-                    rec["_meta"] = meta
-                    results.append(rec)
-                except Exception as e:
-                    errors.append({"url": u, "error": str(e)})
-                time.sleep(1.5)  # 对微信友好，降低风控风险
-            bar.progress(1.0, text="完成")
-            st.session_state["wx_results"] = results
-            st.session_state["wx_errors"] = errors
-            st.session_state.pop("wx_done", None)
-
-    # 展示抓取结果
-    if st.session_state.get("wx_results") is not None:
-        results = st.session_state["wx_results"]
-        errors = st.session_state.get("wx_errors", [])
-        st.success(f"本次共提取 {len(results)} 条，失败 {len(errors)} 条。")
-        if errors:
-            with st.expander(f"失败详情（{len(errors)} 条）"):
-                for e in errors:
-                    st.write(f"- `{e['url'][:70]}` → {e['error']}")
-        if results:
-            st.markdown("**预览（可核对后再批量入库）**")
-            preview_rows = []
-            for r in results:
-                cat = r.get("category") if r.get("category") in CATEGORY_LIST else "lecture"
-                cols = FIELDS_BY_CATEGORY[cat]
-                preview_rows.append({
-                    "分类": CATEGORY_LABELS.get(cat, cat),
-                    **{k: r.get(k) for k in cols if k != "summary"}
-                })
-            st.dataframe(pd.DataFrame(preview_rows), width='stretch', hide_index=True)
-
-            if st.button("全部写入数据库", key="wx_bulk_insert"):
-                ok_n = dup_n = 0
-                for r in results:
-                    meta = r.get("_meta") or {}
-                    r = {k: v for k, v in r.items() if k != "_meta"}
-                    if meta.get("url"):
-                        r["source_url"] = meta["url"]
-                    r["source_type"] = "wechat"
-                    if only_image and not (r.get("title") or "").strip():
-                        continue
-                    ok, _ = insert_lecture(r)
-                    ok_n += 1 if ok else 0
-                    dup_n += 0 if ok else 1
-                st.cache_data.clear()
-                st.success(f"新写入 {ok_n} 条，跳过重复/空记录 {dup_n} 条。")
-                st.session_state.pop("wx_results", None)
-                st.session_state.pop("wx_errors", None)
-                st.rerun()
-
-# 确认 & 写入
-if "pending_record" in st.session_state:
-    st.subheader("② 确认信息并写入")
-    rec = st.session_state["pending_record"]
-    with st.form("confirm_form"):
-        # ---- 1. 分类选择（可手动调整）----
-        cur_cat = rec.get("category") if rec.get("category") in CATEGORY_LIST else "lecture"
-        cat_label_to_key = {v: k for k, v in CATEGORY_LABELS.items()}
-        rec["category"] = st.selectbox(
-            "分类（可手动调整）",
-            options=CATEGORY_LIST,
-            format_func=lambda k: CATEGORY_LABELS.get(k, k),
-            index=CATEGORY_LIST.index(cur_cat),
-        )
-        st.write("")
-
-        fields = FIELDS_BY_CATEGORY[rec["category"]]
-
-        # ---- 2. 动态字段展示 ----
-        # 先根据 category 生成不同行
-        if rec["category"] == "lecture":
-            c1, c2, c3 = st.columns(3)
-            rec["title"]       = c1.text_input("讲座标题",  rec.get("title") or "")
-            rec["speaker"]     = c2.text_input("主讲人",    rec.get("speaker") or "")
-            rec["affiliation"] = c3.text_input("主讲人单位", rec.get("affiliation") or "")
-        elif rec["category"] == "humanities_activity":
-            c1, c2, c3 = st.columns(3)
-            rec["title"]        = c1.text_input("活动名称",        rec.get("title") or "")
-            rec["theme"]        = c2.text_input("主题 / 征稿主题", rec.get("theme") or "")
-            rec["participants"] = c3.text_input("参与对象 / 参赛要求", rec.get("participants") or "")
-        else:  # study_venue
-            c1, c2, c3 = st.columns(3)
-            rec["title"]    = c1.text_input("信息标题", rec.get("title") or "")
-            rec["venue"]    = c2.text_input("场所名称", rec.get("venue") or "")
-            rec["hours"]    = c3.text_input("开放时间描述", rec.get("hours") or "")
-
-        # time_text / time_start / time_end —— 讲座和人文活动用
-        if rec["category"] in ("lecture", "humanities_activity"):
-            c4, c5, c6 = st.columns(3)
-            rec["time_text"]  = c4.text_input("原文时间描述",  rec.get("time_text") or "")
-            rec["time_start"] = c5.text_input("开始时间 ISO8601", rec.get("time_start") or "")
-            rec["time_end"]   = c6.text_input("结束时间 ISO8601", rec.get("time_end") or "")
-
-        # 场地 / 开放期 —— 场所
-        if rec["category"] == "study_venue":
-            c4, c5 = st.columns(2)
-            rec["open_period"] = c4.text_input("有效起止日期", rec.get("open_period") or "")
-            rec["contact"]     = c5.text_input("联系方式（电话 / 联系人）", rec.get("contact") or "")
-            # 场所也可有具体地点（推荐 location）
-            rec["location"] = st.text_input("具体位置（选填）", rec.get("location") or "")
-
-        # location / online_url —— 三类都可能有
-        if rec["category"] in ("lecture", "humanities_activity"):
-            c7, c8 = st.columns(2)
-            rec["location"]   = c7.text_input("线下地点", rec.get("location") or "")
-            rec["online_url"] = c8.text_input("线上链接", rec.get("online_url") or "")
-
-        # host / registration / deadline —— 讲座和活动
-        if rec["category"] in ("lecture", "humanities_activity"):
-            c9, c10, c11 = st.columns(3)
-            rec["host"]         = c9.text_input("主办方",       rec.get("host") or "")
-            rec["registration"] = c10.text_input("报名方式",     rec.get("registration") or "")
-            rec["deadline"]     = c11.text_input("报名 / 征稿截止", rec.get("deadline") or "")
-        else:
-            rec["host"] = st.text_input("主办 / 负责单位", rec.get("host") or "")
-
-        c12, c13 = st.columns(2)
-        rec["source_account"] = c12.text_input("公众号名称", rec.get("source_account") or "")
-        rec["source_url"]     = c13.text_input("消息来源链接", rec.get("source_url") or "")
-        rec["summary"]        = st.text_area("一句话摘要", rec.get("summary") or "")
-
-        cc1, cc2 = st.columns(2)
-        submitted = cc1.form_submit_button("写入数据库")
-        cancelled = cc2.form_submit_button("取消")
-
-        if submitted:
-            ok, msg = insert_lecture(rec)
-            if ok:
-                cat_zh = CATEGORY_LABELS.get(rec["category"], "")
-                st.success(f"已写入【{cat_zh}】《{rec['title']}》。")
-                st.session_state.pop("pending_record", None)
-                st.cache_data.clear()
-                st.rerun()
-            else:
-                st.warning(msg)
-        if cancelled:
-            st.session_state.pop("pending_record", None)
-            st.rerun()
+if st.session_state.pop("_req_pass", False):
+    render_passcode()
+if st.session_state.pop("_req_import", False) and st.session_state.get("auth_ok"):
+    render_import()
