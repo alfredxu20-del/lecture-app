@@ -35,14 +35,16 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 # 优先级：st.secrets（Streamlit Cloud）> 环境变量（本地 .env）
 def _safe_secret(key, default=""):
-    """先试 st.secrets，失败回退 os.getenv。"""
-    _secrets_path = os.path.join(os.path.dirname(__file__), ".streamlit", "secrets.toml")
-    if os.path.exists(_secrets_path):
-        try:
-            return st.secrets[key]
-        except Exception:
-            pass
-    return os.getenv(key, default)
+    """先试 st.secrets，失败回退 os.getenv。
+
+    关键：Streamlit Cloud 的 Secrets 只能通过 st.secrets 读取，
+    且云端并不存在本地 .streamlit/secrets.toml 文件，
+    所以这里必须无条件先尝试 st.secrets，不能先判断本地文件是否存在。
+    """
+    try:
+        return st.secrets[key]
+    except Exception:
+        return os.getenv(key, default)
 
 API_KEY    = _safe_secret("DEEPSEEK_API_KEY")
 API_BASE   = _safe_secret("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
