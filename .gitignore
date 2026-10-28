@@ -20,3 +20,4 @@ _streamlit.*
 _dump*.json
 _wx_imgs/
 lectures.xlsx
+data/

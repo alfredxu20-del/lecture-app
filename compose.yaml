@@ -1,0 +1,60 @@
+name: lecture-app
+
+services:
+  app:
+    build: .
+    image: lecture-app:latest
+    container_name: lecture-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /app/data
+    ports:
+      - "8501:8501"
+    volumes:
+      - lecture_data:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/healthz', timeout=5)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: lecture-caddy
+    restart: unless-stopped
+    profiles:
+      - https
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env before enabling the https profile}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  lecture_data:
+  caddy_data:
+  caddy_config:

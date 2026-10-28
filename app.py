@@ -19,7 +19,7 @@ import time
 import base64
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 import libsql
 from typing import Optional
@@ -54,9 +54,11 @@ MODEL_NAME = _safe_secret("DEEPSEEK_MODEL", "deepseek-chat")
 TURSO_URL    = _safe_secret("TURSO_DB_URL").strip()
 TURSO_TOKEN  = _safe_secret("TURSO_AUTH_TOKEN").strip()
 USE_TURSO    = bool(TURSO_URL and TURSO_TOKEN)
-LOCAL_DB     = os.path.join(os.path.dirname(__file__), "lectures.db")
-EXCEL_PATH   = os.path.join(os.path.dirname(__file__), "lectures.xlsx")
-UPLOAD_DIR   = os.path.join(os.path.dirname(__file__), "uploads")
+DATA_DIR     = os.getenv("DATA_DIR", os.path.dirname(__file__))
+os.makedirs(DATA_DIR, exist_ok=True)
+LOCAL_DB     = os.path.join(DATA_DIR, "lectures.db")
+EXCEL_PATH   = os.path.join(DATA_DIR, "lectures.xlsx")
+UPLOAD_DIR   = os.path.join(DATA_DIR, "uploads")
 
 # 访客录入口令
 GUEST_PASSCODE = _safe_secret("GUEST_PASSCODE").strip()
@@ -103,7 +105,7 @@ _corner_logo_css = (
     f"url(data:image/png;base64,{_corner_logo_b64})" if _corner_logo_b64 else "none"
 )
 
-st.markdown(
+st.html(
     f"""
 <style>
 /* 品牌：衬线字体。其余视觉 token 由 .streamlit/config.toml 控制 */
@@ -251,8 +253,7 @@ html, body, [data-testid="stApp"] {{
   font-size: 0.9rem;
 }}
 </style>
-""",
-    unsafe_allow_html=True,
+"""
 )
 
 
@@ -414,22 +415,67 @@ def is_duplicate(record: dict) -> bool:
     return False
 
 
-def cleanup_expired() -> int:
-    """物理删除已结束的讲座/人文活动（time_end 或 time_start 早于当前时间）。
-    学习场所（study_venue）为长期开放信息，不清理。返回删除条数。"""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+SHANGHAI_TZ = timezone(timedelta(hours=8))
+
+
+def _parse_local_datetime(value) -> Optional[datetime]:
+    """解析数据库中的 ISO 时间，统一为上海本地 naive datetime；失败返回 None。"""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    # datetime.fromisoformat 不支持部分旧数据可能使用的末尾 Z，先显式转换。
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(SHANGHAI_TZ).replace(tzinfo=None)
+    return parsed
+
+
+def cleanup_expired(now: Optional[datetime] = None) -> int:
+    """物理删除已到结束时间的讲座/人文活动，保留学习场所和未过期记录。
+
+    time_end 为空时回退到 time_start；缺失或无法解析的时间不删除，避免误伤。
+    now 可注入用于测试；生产环境始终按上海时区判断，与服务器所在时区无关。
+    """
+    if now is None:
+        now = datetime.now(SHANGHAI_TZ)
+    if now.tzinfo is not None:
+        now = now.astimezone(SHANGHAI_TZ).replace(tzinfo=None)
+
     conn = get_conn()
     try:
-        cur = conn.execute(
+        rows = conn.execute(
             """
-            DELETE FROM lectures
+            SELECT id, time_start, time_end
+            FROM lectures
             WHERE category IN ('lecture', 'humanities_activity')
-              AND COALESCE(NULLIF(time_end, ''), NULLIF(time_start, ''), '9999-12-31 00:00:00') < ?
-            """,
-            (now,),
-        )
-        conn.commit()
-        return cur.rowcount
+            """
+        ).fetchall()
+        expired_ids = []
+        for row_id, time_start, time_end in rows:
+            effective_end = _parse_local_datetime(time_end or time_start)
+            # 到达结束时刻即视为过期；无法解析的时间保留，交由人工核对。
+            if effective_end is not None and effective_end <= now:
+                expired_ids.append(row_id)
+
+        # 分批生成占位符，同时兼容 SQLite 与 libsql 的位置参数接口。
+        for start in range(0, len(expired_ids), 500):
+            batch = expired_ids[start:start + 500]
+            placeholders = ",".join("?" for _ in batch)
+            conn.execute(
+                f"DELETE FROM lectures WHERE id IN ({placeholders})", batch
+            )
+        if expired_ids:
+            conn.commit()
+            # 重复录入路径不会由上层统一清缓存，这里必须主动失效旧查询结果。
+            st.cache_data.clear()
+        return len(expired_ids)
     finally:
         conn.close()
 
@@ -445,12 +491,12 @@ def insert_lecture(record: dict) -> tuple[bool, str]:
         theme, participants,
         venue, hours, open_period, contact
     ) VALUES (
-        :category, :title, :speaker, :affiliation,
-        :time_text, :time_start, :time_end,
-        :location, :online_url, :host, :registration, :deadline,
-        :source_account, :source_url, :source_type, :source_image, :summary,
-        :theme, :participants,
-        :venue, :hours, :open_period, :contact
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?,
+        ?, ?, ?, ?
     )
     """
     # 补齐可能缺失的键
@@ -461,7 +507,10 @@ def insert_lecture(record: dict) -> tuple[bool, str]:
         record["category"] = "lecture"
     # 模糊去重（在 DB UNIQUE 约束之外兜底：标题标点/空格/大小写差异）
     if is_duplicate(record):
-        return False, "检测到疑似重复信息（标题与时间相同），已自动跳过。"
+        # 即使本次是重复录入，也必须执行过期清理，不能提前跳过后续维护。
+        removed = cleanup_expired()
+        tail = f"（本次已自动清理 {removed} 条已结束的信息）" if removed else ""
+        return False, "检测到疑似重复信息（标题与时间相同），已自动跳过。" + tail
     conn = get_conn()
     try:
         # 顺序必须与 INSERT 列名一致；libsql 不支持 :name 命名参数，所以这里直接按列顺序传 list
@@ -476,11 +525,12 @@ def insert_lecture(record: dict) -> tuple[bool, str]:
         params = [record.get(c) for c in cols_order]
         cur = conn.execute(sql, params)
         conn.commit()
-        if cur.rowcount == 0:
-            return False, "检测到疑似重复讲座，已自动跳过。"
-        # 写入成功后自动清理已过期信息（物理删除）
+        # 每次写入尝试后都清理：包括成功新增及被 UNIQUE 约束跳过的重复记录。
+        # 放在新增之后，也能立即清除本次误录入的已过期记录。
         removed = cleanup_expired()
         tail = f"（本次已自动清理 {removed} 条已结束的信息）" if removed else ""
+        if cur.rowcount == 0:
+            return False, "检测到疑似重复讲座，已自动跳过。" + tail
         return True, "已成功写入数据库。" + tail
     finally:
         conn.close()
